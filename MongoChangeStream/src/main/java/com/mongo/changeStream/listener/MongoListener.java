@@ -1,14 +1,21 @@
 package com.mongo.changeStream.listener;
 
+import java.util.List;
+
+import org.bson.BsonDocument;
+import org.bson.Document;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import com.mongo.changeStream.config.MongoConfiguration;
+import com.mongo.changeStream.entity.Audit;
 import com.mongo.changeStream.repository.AuditRepository;
+import com.mongodb.client.MongoChangeStreamCursor;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.changestream.ChangeStreamDocument;
 
 @Component
 public class MongoListener {
@@ -23,10 +30,69 @@ public class MongoListener {
 	private AuditRepository auditRepository;
 	
 	@EventListener(ApplicationReadyEvent.class)
-	public void runAfterStartup() {
+	public void runAfterStartup() throws Exception {
+	/*	
+		MongoDatabase sampleTrainingDB = mongoClient.getDatabase("audit");
+		BsonDocument bb = BsonDocument.parse("{_id : '-1'}");
+        FindIterable<Document> gradesCollection = sampleTrainingDB.getCollection("audit_collection").find().
+        		sort(bb);
+       	
+       MongoCollection<Document> collection = sampleTrainingDB.getCollection("audit_collection");
+        
+        if(gradesCollection!= null) {
+        	 Document lastDocument = gradesCollection.first();	
+        	 BsonDocument resumeToken= BsonDocument.parse(lastDocument.toJson());
+        	  if(lastDocument!= null) {
+        		  sampleTrainingDB.watch().resumeAfter(resumeToken);
+        		  //save audit
+        		  Random rand = new Random();
+                  Document audit = new Document("_id", new ObjectId());
+                  audit.append("auditdata", 10000d)
+                         .append("event", 1d);
+                  collection.insertOne(audit);
+        		  
+        	  }
+        	 
+        }
+        else {
+        	//
+        }
+		*/
 	    
 		System.out.println("Yaaah, I am running Mongo Listener........");
 	    MongoDatabase database  = mongoClient.getDatabase(mongoConfiguration.getDatabaseName());
+	    
+	    List<Audit> auditInfoList = auditRepository.findAll();
+	    Audit lastAuditRecord = null;
+	    if(auditInfoList!=null && auditInfoList.size()>0) {
+	    	lastAuditRecord = auditInfoList.get(auditInfoList.size()-1);
+	    	BsonDocument resumeToken = lastAuditRecord.getResumeToken();
+	    	//call a method which will resumeStream()
+	    	try(MongoChangeStreamCursor<ChangeStreamDocument<Document>> cursor =database.watch().resumeAfter(resumeToken).cursor()){
+	    		while(cursor.hasNext()) {
+	    			ChangeStreamDocument<Document> document = cursor.next();
+	    			BsonDocument recordResumeToken = document.getResumeToken();
+	    			saveIntoAudit(new Audit("FirstName", "LastName",recordResumeToken));
+	    			//post it on kafka
+	    			
+	    		}
+	    	}
+	    	
+
+	    }
+	    else {
+	    	//regular Watch and get stream
+	    	try(MongoChangeStreamCursor<ChangeStreamDocument<Document>> cursor =database.watch().cursor()){
+	    		while(cursor.hasNext()) {
+	    			ChangeStreamDocument<Document> document = cursor.next();
+	    			BsonDocument recordResumeToken = document.getResumeToken();
+	    			saveIntoAudit(new Audit("FirstName", "LastName",recordResumeToken));
+	    			//post it on kafka
+	    			
+	    		}
+	    	}
+	    	
+	    }
 	    
 	    /******************DO IT NOW******************
 	      Check resume after event with the sample code
@@ -62,6 +128,7 @@ public class MongoListener {
 	     //Save the audit info
 	   // auditRepository.save(new Audit("sdsd", "Smisdsth"));
 	   // auditRepository.save(new Audit("sdsdBob", "Smisdsdsdsth"));
+	    //OR   MongoCollection<Document> gradesCollection = database.getCollection("grades"); gradesCollection.insertOne(new Audit("sdsd", "Smisdsth"));
 	     
 	     //publish on kafka
 	     
@@ -104,6 +171,16 @@ public class MongoListener {
 	     
 	}
 	
+	
+	public void saveIntoAudit(Audit audit) throws Exception{
+		try {
+			auditRepository.save(audit);
+			//publish to kafka
+		}
+		catch(Exception e) {
+			e.printStackTrace();
+		}
+	}
 	
 	
 }
