@@ -4,6 +4,8 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration
 public class KakfaConfiguration {
+	
+	
 
 //    @Bean
 //    public ProducerFactory<String, String> producerFactory() {

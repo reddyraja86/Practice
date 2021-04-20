@@ -1,53 +1,87 @@
 package com.spring.kafka;
 
+import java.util.logging.Logger;
+
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.event.EventListener;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.event.ContainerStoppedEvent;
 import org.springframework.kafka.support.SendResult;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.concurrent.ListenableFuture;
 import org.springframework.util.concurrent.ListenableFutureCallback;
 
 @Service
-public class KafkaSender {
-	
-	
+public class KafkaSender implements KafkaSenderI {
+
+	private static final Logger log = Logger.getLogger(KafkaSender.class.getName());
+
 	@Autowired
 	private KafkaTemplate<String, String> kafkaTemplate;
-	
+
+	@Autowired
+	KafkaSenderI kafkaSenderI;
+
+	@Autowired
+	private ThreadPoolTaskExecutor threadPoolTaskExecutor;
+
 	String kafkaTopic = "javainuse-topic";
-	
-	public void send(String message) {
-	    
-		ListenableFuture<SendResult<String, String>> sendResultListenableFuture = kafkaTemplate.send(kafkaTopic, message);
-		
-	    sendResultListenableFuture.addCallback(new ListenableFutureCallback<SendResult<String, String>>() {
 
-	        @Override
-	        public void onFailure(Throwable ex) {
+	@Override
+	public void send(String message) throws Throwable {
 
-	            handleFailure(kafkaTopic, message, ex);
+		ProducerRecord<String, String> record = new ProducerRecord<String, String>(kafkaTopic, "Collection_Name",
+				message);
+		System.out.println("---send------");
 
-	        }
+		ListenableFuture<SendResult<String, String>> sendResultListenableFuture = kafkaTemplate.send(record);
 
-	        @Override
-	        public void onSuccess(SendResult<String, String> result) {
+//		if (message.length() > 0)
+//			throw new KafkaProducerException(record, message, null);
 
-	            handleSuccess(kafkaTopic, message,result);
+		sendResultListenableFuture.addCallback(new ListenableFutureCallback<SendResult<String, String>>() {
 
-	        }
-	    });
+			@Override
+			public void onFailure(Throwable ex) {
+
+				try {
+					handleFailure(kafkaTopic, message, ex);
+				} catch (Throwable e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+
+			}
+
+			@Override
+			public void onSuccess(SendResult<String, String> result) {
+
+				handleSuccess(kafkaTopic, message, result);
+
+			}
+		});
 
 	}
-	
+
+	@Override
+	public String failedRetry(Throwable e) {
+		log.info("---------------------retry -----------------------");
+		return "retry";
+	}
+
 	private void handleSuccess(String key, String value, SendResult<String, String> result) {
-         //Audit Here
-	    System.out.println("The record with key : {}, value : {} is produced sucessfullly to offset {}"+ key+value+ result.getRecordMetadata().offset());
+		log.info("--------handleSuccess---------");
 
 	}
 
-	private void handleFailure(String key, String value, Throwable ex) {
+	private void handleFailure(String key, String value, Throwable ex) throws Throwable {
+		ex.printStackTrace();
 
-		 System.out.println("The record with key: {}, value: {} cannot be processed! caused by {}"+key+ value+ ex.getMessage());
-	// Here you can implement the code to filter based on exception type and place the events on to a topic as the first approach or a database like the second approach.
+		log.info("-------handleFailure---------" + ex.getStackTrace());
+		// kafkaSenderI.send("Retry");
 	}
+
+	
 }
